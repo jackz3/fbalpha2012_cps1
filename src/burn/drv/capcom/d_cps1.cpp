@@ -3982,6 +3982,16 @@ static struct BurnRomInfo NTFOJDrvRomDesc[] = {
 STD_ROM_PICK(NTFOJDrv)
 STD_ROM_FN(NTFOJDrv)
 
+static struct BurnRomInfo SpaceInvadersRomDesc[] = {
+	{ "invaders.h",   0x800, 1934580440, CPS1_Z80_PROGRAM },
+	{ "invaders.g",   0x800, 1811597898, CPS1_Z80_PROGRAM },
+	{ "invaders.f",   0x800, 214871446,  CPS1_Z80_PROGRAM },
+	{ "invaders.e",   0x800, 0x14e538b0, CPS1_Z80_PROGRAM }
+};
+
+STD_ROM_PICK(SpaceInvaders)
+STD_ROM_FN(SpaceInvaders)
+
 static struct BurnRomInfo ThreeWondersRomDesc[] = {
 	{ "rte_30a.11f",   0x020000, 0xef5b8b33, BRF_ESS | BRF_PRG | CPS1_68K_PROGRAM_BYTESWAP },
 	{ "rte_35a.11h",   0x020000, 0x7d705529, BRF_ESS | BRF_PRG | CPS1_68K_PROGRAM_BYTESWAP },
@@ -11280,6 +11290,7 @@ struct GameConfig {
 
 static const struct GameConfig ConfigTable[] =
 {
+	{ "invaders"    , CPS_B_05    , mapper_YI24B , 0, NULL                },
 	{ "1941"        , CPS_B_05    , mapper_YI24B , 0, NULL                },
 	{ "1941r1"      , CPS_B_05    , mapper_YI24B , 0, NULL                },
 	{ "1941u"       , CPS_B_05    , mapper_YI24B , 0, NULL                },
@@ -11564,6 +11575,39 @@ static UINT32 nCpsPicRomNum = 0;
 static UINT32 nCpsExtraTilesRomNum = 0;
 static UINT32 nCpsExtraGfxLen = 0;
 
+static INT32 I8080LoadRoms(INT32 bload) {
+	struct BurnRomInfo ri;
+	ri.nType = 0;
+	ri.nLen = 0;
+	INT32 nOffset = -1;
+	UINT32 i = 0;
+	INT32 nRet = 0;
+	INT32 Offset = 0;
+	if (!bload) {
+		do {
+			ri.nLen = 0;
+			BurnDrvGetRomInfo(&ri, ++nOffset);
+			if (!ri.nLen) {
+				break;
+			}
+			nCpsZRomLen += ri.nLen;
+			nCpsZ80RomNum++;
+		} while(true);
+	}
+	if (bload) {
+		if (nCpsZRomLen) {
+			Offset = 0;
+			for (; i < nCpsZ80RomNum; i++) {
+				BurnLoadRom(CpsZRom + Offset, i, 1);
+				
+				BurnDrvGetRomInfo(&ri, i);
+				Offset += ri.nLen;
+			}
+		}
+	}
+	return nRet;
+}
+
 static INT32 Cps1LoadRoms(INT32 bLoad)
 {
 	struct BurnRomInfo ri;
@@ -11817,6 +11861,27 @@ static INT32 DrvInit()
 	}
 	
 	nRet = CpsRunInit(); if (nRet != 0) return 1;
+	
+	Cps1VBlankIRQLine = 2;
+	
+	return 0;
+}
+
+static INT32 I8080DrvInit()
+{
+	INT32 nRet = 0;
+	
+	SetGameConfig();
+    
+	I8080LoadRoms(0);
+
+	Cps = 1;
+	nRet = I8080Init(); if (nRet != 0) return 1;
+	I8080LoadRoms(1);
+	// if (AmendProgRomCallback) AmendProgRomCallback();
+	
+	SetGameConfig();
+	nRet = I8080RunInit(); if (nRet != 0) return 1;
 	
 	Cps1VBlankIRQLine = 2;
 	
@@ -14640,6 +14705,16 @@ static INT32 WofbInit()
 }
 
 // Driver Definitions
+
+struct BurnDriver BurnDrvI8080Invaders = {
+	"invaders", NULL, NULL, NULL, "1978",
+	"Space Invaders ()\0", NULL, "Taito", "I8080",
+	NULL, NULL, NULL, NULL,
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL | BDF_HISCORE_SUPPORTED, 2, HARDWARE_CAPCOM_CPS1, GBF_VERSHOOT, 0,
+	NULL, SpaceInvadersRomInfo, SpaceInvadersRomName, NULL, NULL, NTFOInputInfo, NTFODIPInfo,
+	I8080DrvInit, DrvExit, I8080Frame, CpsRedraw, CpsAreaScan,
+	&CpsRecalcPal, 0x1000, 256, 224, 4, 3
+};
 
 struct BurnDriver BurnDrvCps1941 = {
 	"1941", NULL, NULL, NULL, "1990",

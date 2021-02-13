@@ -1,3 +1,4 @@
+#include<cstdio>
 // CPS - Run
 #include "cps.h"
 
@@ -96,6 +97,21 @@ static const eeprom_interface cps2_eeprom_interface =
 	0,
 	0
 };
+
+UINT32 cpu_disassemble_i8085(char *buffer, UINT32 pc, const UINT8 *oprom, const UINT8 *opram);
+INT32 I8080RunInit() {
+	UINT8* oprom = CpsZRom;
+	for (int i = 0; i < 26;) {
+		char str[100];
+		// printf("rom: %d\n", *(oprom + pc));
+		UINT32 step = cpu_disassemble_i8085(str, 0, oprom, oprom);
+		oprom += step;
+		printf("%04x %s\n", i, str);
+		i += step;
+	}
+	printf("disamble ===========\n");
+	return 0;
+}
 
 INT32 CpsRunInit()
 {
@@ -273,6 +289,11 @@ static void DoIRQ()
 	}
 
 	return;
+}
+
+INT32 I8080Frame() {
+	printf("frame\n");
+	return 1;
 }
 
 INT32 Cps1Frame()

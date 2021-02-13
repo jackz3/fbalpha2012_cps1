@@ -1,1 +1,504 @@
-include makefile.libretro
+DEBUG = 0
+LIBRETRO_OPTIMIZATIONS = 1
+FRONTEND_SUPPORTS_RGB565 = 1
+
+ifeq ($(platform),)
+platform = unix
+ifeq ($(shell uname -a),)
+   platform = win
+else ifneq ($(findstring Darwin,$(shell uname -a)),)
+   platform = osx
+else ifneq ($(findstring MINGW,$(shell uname -a)),)
+   platform = win
+endif
+endif
+
+# system platform
+system_platform = unix
+ifeq ($(shell uname -a),)
+   system_platform = win
+EXE_EXT=.exe
+else ifneq ($(findstring Darwin,$(shell uname -a)),)
+   system_platform = osx
+else ifneq ($(findstring MINGW,$(shell uname -a)),)
+   system_platform = win
+endif
+
+
+MAIN_FBA_DIR := src
+FBA_BURN_DIR := $(MAIN_FBA_DIR)/burn
+FBA_BURN_DRIVERS_DIR := $(MAIN_FBA_DIR)/burn/drv
+FBA_BURNER_DIR := $(MAIN_FBA_DIR)/burner
+LIBRETRO_DIR := $(FBA_BURNER_DIR)/libretro
+LIBRETRO_COMM_DIR  = $(LIBRETRO_DIR)/libretro-common
+FBA_CPU_DIR := $(MAIN_FBA_DIR)/cpu
+FBA_LIB_DIR := $(MAIN_FBA_DIR)/dep/libs
+FBA_INTERFACE_DIR := $(MAIN_FBA_DIR)/intf
+FBA_GENERATED_DIR = $(MAIN_FBA_DIR)/dep/generated
+FBA_SCRIPTS_DIR = $(MAIN_FBA_DIR)/dep/scripts
+GRIFFIN_DIR = griffin-libretro
+
+EXTERNAL_ZLIB = 0
+
+TARGET_NAME := fbalpha2012_cps1
+
+SPACE :=
+SPACE := $(SPACE) $(SPACE)
+BACKSLASH :=
+BACKSLASH := \$(BACKSLASH)
+filter_out1 = $(filter-out $(firstword $1),$1)
+filter_out2 = $(call filter_out1,$(call filter_out1,$1))
+unixpath = $(subst \,/,$1)
+unixcygpath = /$(subst :,,$(call unixpath,$1))
+
+ifneq (,$(findstring msvc,$(platform)))
+	OBJOUT = -Fo
+	LINKOUT = -out:
+ifeq ($(STATIC_LINKING),1)
+	LD ?= lib.exe
+	STATIC_LINKING=0
+else
+	LD = link.exe
+endif
+else
+	OBJOUT   = -o
+	LINKOUT  = -o 
+	LD = $(CXX)
+endif
+
+ifeq ($(platform), unix)
+   TARGET := $(TARGET_NAME)_libretro.so
+   fpic := -fPIC
+   SHARED := -shared -Wl,-no-undefined -Wl,--version-script=$(LIBRETRO_DIR)/link.T
+	PLATFORM_DEFINES := -DUSE_FILE32API
+   ifeq ($(shell uname -m),ppc)
+      ENDIANNESS_DEFINES := -DMSB_FIRST
+   endif
+else ifeq ($(platform), osx)
+   TARGET := $(TARGET_NAME)_libretro.dylib
+   fpic := -fPIC
+   SHARED := -dynamiclib
+   ifeq ($(shell uname -p),powerpc)
+      ENDIANNESS_DEFINES := -DMSB_FIRST
+   endif
+else ifneq (,$(findstring ios,$(platform)))
+   TARGET := $(TARGET_NAME)_libretro_ios.dylib
+   fpic := -fPIC
+   SHARED := -dynamiclib
+
+ifeq ($(IOSSDK),)
+   IOSSDK = $(shell xcodebuild -version -sdk iphoneos Path)
+endif
+
+ifeq ($(platform),ios-arm64)
+	CC = cc -arch arm64 -isysroot $(IOSSDK)
+	CXX = c++ -arch arm64 -isysroot $(IOSSDK)   
+else
+   CC = cc -arch armv7 -isysroot $(IOSSDK)
+	CXX = c++ -arch armv7 -isysroot $(IOSSDK)
+endif
+   CFLAGS += -DIOS
+
+   ifeq ($(platform),$(filter $(platform),ios9 ios-arm64))
+      CC += -miphoneos-version-min=8.0
+      CXX +=  -miphoneos-version-min=8.0
+      CFLAGS += -miphoneos-version-min=8.0
+   else
+      CC += -miphoneos-version-min=5.0
+      CXX +=  -miphoneos-version-min=5.0
+      CFLAGS += -miphoneos-version-min=5.0
+   endif
+
+else ifeq ($(platform), qnx)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).so
+   fpic := -fPIC
+   SHARED := -lcpp -lm -shared -Wl,-no-undefined -Wl,--version-script=$(LIBRETRO_DIR)/link.T
+
+	CC = qcc -Vgcc_ntoarmv7le
+	CXX = QCC -Vgcc_ntoarmv7le_cpp
+	AR = qcc -Vgcc_ntoarmv7le
+	PLATFORM_DEFINES := -D__BLACKBERRY_QNX__ -marm -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=softfp
+
+else ifeq ($(platform), vita)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).a
+	CC = arm-vita-eabi-gcc$(EXE_EXT)
+	CC_AS = arm-vita-eabi-gcc$(EXE_EXT)
+	CXX = arm-vita-eabi-g++$(EXE_EXT)
+	AR = arm-vita-eabi-ar$(EXE_EXT)
+   PLATFORM_DEFINES += -DVITA
+   EXTERNAL_ZLIB = 1
+	STATIC_LINKING = 1
+   CFLAGS += -O3 -mfloat-abi=hard -ffast-math -fsingle-precision-constant
+   CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
+   CPU_ARCH := arm
+else ifeq ($(platform), psl1ght)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).a
+   CC = $(PS3DEV)/ppu/bin/ppu-gcc$(EXE_EXT)
+   CXX = $(PS3DEV)/ppu/bin/ppu-g++$(EXE_EXT)
+   AR = $(PS3DEV)/ppu/bin/ppu-ar$(EXE_EXT)
+   ENDIANNESS_DEFINES = -DMSB_FIRST
+   PLATFORM_DEFINES += -D__PSL1GHT__
+   EXTERNAL_ZLIB = 1
+	STATIC_LINKING = 1
+else ifeq ($(platform), xenon)
+   TARGET := $(TARGET_NAME)_libretro_xenon360.a
+   CC = xenon-gcc$(EXE_EXT)
+   CXX = xenon-g++$(EXE_EXT)
+   AR = xenon-ar$(EXE_EXT)
+   ENDIANNESS_DEFINES = -DMSB_FIRST
+   PLATFORM_DEFINES := -D__LIBXENON__ -m32 -D__ppc__
+else ifeq ($(platform), ngc)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).a
+   CC = $(DEVKITPPC)/bin/powerpc-eabi-gcc$(EXE_EXT)
+   CXX = $(DEVKITPPC)/bin/powerpc-eabi-g++$(EXE_EXT)
+   AR = $(DEVKITPPC)/bin/powerpc-eabi-ar$(EXE_EXT)
+   ENDIANNESS_DEFINES = -DMSB_FIRST
+   PLATFORM_DEFINES := -DGEKKO -DHW_DOL -mrvl -mcpu=750 -meabi -mhard-float
+   PLATFORM_DEFINES += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
+   EXTERNAL_ZLIB = 1
+	STATIC_LINKING = 1
+else ifeq ($(platform), wii)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).a
+   CC = $(DEVKITPPC)/bin/powerpc-eabi-gcc$(EXE_EXT)
+   CXX = $(DEVKITPPC)/bin/powerpc-eabi-g++$(EXE_EXT)
+   AR = $(DEVKITPPC)/bin/powerpc-eabi-ar$(EXE_EXT)
+   ENDIANNESS_DEFINES = -DMSB_FIRST
+   PLATFORM_DEFINES := -DGEKKO -DHW_RVL -mrvl -mcpu=750 -meabi -mhard-float
+   PLATFORM_DEFINES += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
+   EXTERNAL_ZLIB = 1
+	STATIC_LINKING = 1
+else ifeq ($(platform), wiiu)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).a
+   CC = $(DEVKITPPC)/bin/powerpc-eabi-gcc$(EXE_EXT)
+   CXX = $(DEVKITPPC)/bin/powerpc-eabi-g++$(EXE_EXT)
+   AR = $(DEVKITPPC)/bin/powerpc-eabi-ar$(EXE_EXT)
+   ENDIANNESS_DEFINES = -DMSB_FIRST
+   PLATFORM_DEFINES := -DGEKKO -DWIIU -DHW_RVL -mcpu=750 -meabi -mhard-float
+   PLATFORM_DEFINES += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
+   EXTERNAL_ZLIB = 1
+	STATIC_LINKING = 1
+else ifeq ($(platform), ctr)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).a
+   EXTERNAL_ZLIB = 1
+   CC = $(DEVKITARM)/bin/arm-none-eabi-gcc$(EXE_EXT)
+   CXX = $(DEVKITARM)/bin/arm-none-eabi-g++$(EXE_EXT)
+   AR = $(DEVKITARM)/bin/arm-none-eabi-ar$(EXE_EXT)
+   PLATFORM_DEFINES += -DARM11 -D_3DS
+   PLATFORM_DEFINES += -march=armv6k -mtune=mpcore -mfloat-abi=hard
+   PLATFORM_DEFINES += -Wall -mword-relocations
+   PLATFORM_DEFINES += -fomit-frame-pointer -ffast-math
+   CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
+   CPU_ARCH := arm
+   STATIC_LINKING = 1
+# Nintendo Switch (libnx)
+else ifeq ($(platform), libnx)
+   include $(DEVKITPRO)/libnx/switch_rules
+   TARGET := $(TARGET_NAME)_libretro_$(platform).a
+   PLATFORM_DEFINES := -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int
+   PLATFORM_DEFINES += -fPIE -I$(LIBNX)/include/ -specs=$(LIBNX)/switch.specs
+   PLATFORM_DEFINES += -D__SWITCH__ -DHAVE_LIBNX -DARM -march=armv8-a -mtune=cortex-a57 -mtp=soft
+   EXTERNAL_ZLIB = 1
+   STATIC_LINKING = 1
+else ifeq ($(platform), rpi2)
+   TARGET := $(TARGET_NAME)_libretro.so
+   fpic := -fPIC
+   SHARED := -shared -Wl,-no-undefined -Wl,--version-script=$(LIBRETRO_DIR)/link.T
+   PLATFORM_DEFINES += -marm -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
+   PLATFORM_DEFINES += -fomit-frame-pointer -ffast-math
+   PLATFORM_DEFINES += -DARM
+   CXXFLAGS += $(CFLAGS) -fno-rtti -fno-exceptions
+   CPU_ARCH := arm 
+
+# Classic Platforms ####################
+# Platform affix = classic_<ISA>_<µARCH>
+# Help at https://modmyclassic.com/comp
+
+# (armv7 a7, hard point, neon based) ### 
+# NESC, SNESC, C64 mini 
+else ifeq ($(platform), classic_armv7_a7)
+	TARGET := $(TARGET_NAME)_libretro.so
+	fpic := -fPIC
+	SHARED := -shared -Wl,-no-undefined -Wl,--version-script=$(LIBRETRO_DIR)/link.T
+	CFLAGS += -Ofast \
+	-flto=4 -fwhole-program -fuse-linker-plugin \
+	-fdata-sections -ffunction-sections -Wl,--gc-sections \
+	-fno-stack-protector -fno-ident -fomit-frame-pointer \
+	-falign-functions=1 -falign-jumps=1 -falign-loops=1 \
+	-fno-unwind-tables -fno-asynchronous-unwind-tables -fno-unroll-loops \
+	-fmerge-all-constants -fno-math-errno \
+	-marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
+	CXXFLAGS += $(CFLAGS)
+	CPPFLAGS += $(CFLAGS)
+	ASFLAGS += $(CFLAGS)
+	HAVE_NEON = 1
+	ARCH = arm
+	BUILTIN_GPU = neon
+	USE_DYNAREC = 1
+	ifeq ($(shell echo `$(CC) -dumpversion` "< 4.9" | bc -l), 1)
+	  CFLAGS += -march=armv7-a
+	else
+	  CFLAGS += -march=armv7ve
+	  # If gcc is 5.0 or later
+	  ifeq ($(shell echo `$(CC) -dumpversion` ">= 5" | bc -l), 1)
+	    LDFLAGS += -static-libgcc -static-libstdc++
+	  endif
+	endif
+#######################################
+
+else ifeq ($(platform), emscripten)
+   TARGET := $(TARGET_NAME)_libretro_$(platform).bc
+   PLATFORM_DEFINES := -DUSE_FILE32API
+   EXTERNAL_ZLIB = 1
+	STATIC_LINKING = 1
+
+# GCW0
+else ifeq ($(platform), gcw0)
+   TARGET := $(TARGET_NAME)_libretro.so
+   CC = /opt/gcw0-toolchain/usr/bin/mipsel-linux-gcc
+   CXX = /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
+   AR = /opt/gcw0-toolchain/usr/bin/mipsel-linux-ar
+   fpic := -fPIC
+   SHARED := -shared -Wl,--gc-sections -Wl,-no-undefined -Wl,--version-script=$(LIBRETRO_DIR)/link.T
+   LDFLAGS += $(PTHREAD_FLAGS)
+   CFLAGS += $(PTHREAD_FLAGS) -DHAVE_MKDIR -DDINGUX
+   CFLAGS += -ffast-math -march=mips32 -mtune=mips32r2 -mhard-float
+   CFLAGS +=  -fomit-frame-pointer -ffunction-sections -fdata-sections
+   CXXFLAGS += -std=gnu++11 $(CFLAGS)
+
+# Windows MSVC 2003 Xbox 1
+else ifeq ($(platform), xbox1_msvc2003)
+TARGET := $(TARGET_NAME)_libretro_xdk1.lib
+CC  = CL.exe
+CXX  = CL.exe
+LD   = lib.exe
+
+export INCLUDE := $(XDK)/xbox/include
+export LIB := $(XDK)/xbox/lib
+PATH := $(call unixcygpath,$(XDK)/xbox/bin/vc71):$(PATH)
+PSS_STYLE :=2
+CFLAGS   += -D_XBOX -D_XBOX1
+CXXFLAGS += -D_XBOX -D_XBOX1
+STATIC_LINKING=1
+
+# Windows MSVC 2003 x86
+else ifeq ($(platform), windows_msvc2003_x86)
+	CC  = cl.exe
+	CXX = cl.exe
+
+PATH := $(shell IFS=$$'\n'; cygpath "$(VS71COMNTOOLS)../../Vc7/bin"):$(PATH)
+PATH := $(PATH):$(shell IFS=$$'\n'; cygpath "$(VS71COMNTOOLS)../IDE")
+INCLUDE := $(shell IFS=$$'\n'; cygpath "$(VS71COMNTOOLS)../../Vc7/include")
+LIB := $(shell IFS=$$'\n'; cygpath -w "$(VS71COMNTOOLS)../../Vc7/lib")
+BIN := $(shell IFS=$$'\n'; cygpath "$(VS71COMNTOOLS)../../Vc7/bin")
+
+WindowsSdkDir := $(INETSDK)
+
+export INCLUDE := $(INCLUDE);$(INETSDK)/Include;libretro-common/include/compat/msvc
+export LIB := $(LIB);$(WindowsSdkDir);$(INETSDK)/Lib
+TARGET := $(TARGET_NAME)_libretro.dll
+PSS_STYLE :=2
+LDFLAGS += -DLL
+CFLAGS += -D_CRT_SECURE_NO_DEPRECATE
+
+else
+   TARGET := $(TARGET_NAME)_libretro.dll
+   CC ?= gcc
+   CXX ?= g++
+   SHARED := -shared -Wl,-no-undefined -Wl,--version-script=$(LIBRETRO_DIR)/link.T
+   LDFLAGS += -static-libgcc -static-libstdc++
+endif
+
+CC_SYSTEM = gcc
+CXX_SYSTEM = g++
+
+.PHONY: clean generate-files generate-files-clean clean-objs
+
+all: $(TARGET)
+
+BURN_BLACKLIST := $(FBA_BURNER_DIR)/un7z.cpp \
+	$(FBA_CPU_DIR)/m68k/m68k_in.c \
+	$(FBA_CPU_DIR)/m68k/m68kmake.c \
+	$(FBA_CPU_DIR)/m68k/m68kdasm.c \
+	$(FBA_BURNER_DIR)/wave_writer.cpp \
+	$(FBA_CPU_DIR)/c68k/c68k_ini.c \
+	$(FBA_CPU_DIR)/c68k/c68k_op.c \
+	$(FBA_BURN_DIR)/drv/capcom/ctv_make.cpp
+
+EMU_C68K = 0
+FBA_DEFINES :=
+
+ifeq ($(EMU_C68K), 1)
+	FBA_DEFINES += -DEMU_C68K
+	BURN_BLACKLIST += $(FBA_CPU_DIR)/m68k/m68kcpu.c \
+							$(FBA_CPU_DIR)/m68k/m68kopnz.c \
+							$(FBA_CPU_DIR)/m68k/m68kopac.c \
+							$(FBA_CPU_DIR)/m68k/m68kopdm.c \
+							$(FBA_CPU_DIR)/m68k/m68kopnz.c \
+							$(FBA_CPU_DIR)/m68k/m68kops.c
+	M68K_DIR := $(FBA_CPU_DIR)/c68k
+else
+	FBA_DEFINES += -DEMU_M68K
+	BURN_BLACKLIST += $(FBA_CPU_DIR)/c68k/c68k.c
+	M68K_DIR := $(FBA_CPU_DIR)/m68k
+endif
+
+#ifeq ($(LIBRETRO_OPTIMIZATIONS), 1)
+#BURN_BLACKLIST += $(FBA_BURN_DIR)/drv/capcom/ctv.cpp
+#endif
+
+CPS2_DIR := $(FBA_BURN_DRIVERS_DIR)/capcom
+
+FBA_BURN_DIRS := $(FBA_BURN_DIR) \
+	$(FBA_BURN_DIR)/devices \
+	$(FBA_BURN_DIR)/snd \
+	$(CPS2_DIR)
+
+FBA_CPU_DIRS := $(FBA_CPU_DIR) \
+	$(M68K_DIR) \
+	$(FBA_CPU_DIR)/z80 \
+	$(FBA_CPU_DIR)/i8085
+
+FBA_LIB_DIRS := $(FBA_LIB_DIR)/zlib
+
+FBA_SRC_DIRS := $(FBA_BURNER_DIR) $(FBA_BURN_DIRS) $(FBA_CPU_DIRS) $(FBA_BURNER_DIRS)
+
+ifeq ($(EXTERNAL_ZLIB), 1)
+FBA_DEFINES += -DEXTERNAL_ZLIB
+else
+FBA_SRC_DIRS += $(FBA_LIB_DIRS)
+endif
+
+FBA_CXXSRCS := $(GRIFFIN_CXXSRCFILES) $(filter-out $(BURN_BLACKLIST),$(foreach dir,$(FBA_SRC_DIRS),$(wildcard $(dir)/*.cpp)))
+FBA_CXXSRCS += $(LIBRETRO_DIR)/libretro.cpp
+FBA_CXXOBJ := $(FBA_CXXSRCS:.cpp=.o)
+FBA_CSRCS := $(filter-out $(BURN_BLACKLIST),$(foreach dir,$(FBA_SRC_DIRS),$(wildcard $(dir)/*.c)))
+FBA_COBJ := $(FBA_CSRCS:.c=.o)
+
+OBJS := $(FBA_COBJ) $(FBA_CXXOBJ)
+
+FBA_DEFINES += -DFBACORES_CPS \
+	-DUSE_SPEEDHACKS -D__LIBRETRO__ \
+	-D__LIBRETRO_OPTIMIZATIONS__ \
+	$(ENDIANNESS_DEFINES) \
+	$(PLATFORM_DEFINES)
+
+INCDIRS := -I$(FBA_BURNER_DIR)/win32 \
+	-I$(LIBRETRO_DIR) \
+	-I$(LIBRETRO_DIR)/tchar \
+	-I$(FBA_BURN_DIR) \
+	-I$(MAIN_FBA_DIR)/cpu \
+	-I$(FBA_BURN_DIR)/snd \
+	-I$(FBA_BURN_DIR)/devices \
+	-I$(FBA_INTERFACE_DIR) \
+	-I$(FBA_INTERFACE_DIR)/input \
+	-I$(FBA_INTERFACE_DIR)/cd \
+	-I$(FBA_BURNER_DIR) \
+	-I$(FBA_CPU_DIR) \
+	-I$(FBA_CPU_DIR)/i8039 \
+	-I$(FBA_LIB_DIR)/zlib \
+	-I$(FBA_BURN_DIR)/drv/capcom \
+	-I$(FBA_GENERATED_DIR) \
+	-I$(LIBRETRO_COMM_DIR)/include \
+	-I$(FBA_LIB_DIR)
+
+ifneq (,$(findstring msvc2003,$(platform)))
+INCDIRS += -I$(LIBRETRO_COMM_DIR)/include/compat/msvc
+endif
+
+ifeq ($(LIBRETRO_OPTIMIZATIONS), 1)
+FBA_DEFINES += -D__LIBRETRO_OPTIMIZATIONS__ 
+endif
+
+ifeq ($(DEBUG), 1)
+CFLAGS += -O0 -g
+CXXFLAGS += -O0 -g
+else
+CFLAGS += -O2 -DNDEBUG
+CXXFLAGS += -O2 -DNDEBUG
+endif
+
+ifeq ($(platform), sncps3)
+WARNINGS_DEFINES =
+else ifneq (,$(findstring msvc,$(platform)))
+WARNINGS_DEFINES =
+else
+WARNINGS_DEFINES = -Wno-write-strings
+C_STD_DEFINES = -std=gnu99
+endif
+
+CFLAGS += $(C_STD_DEFINES) $(fpic) $(WARNINGS_DEFINES) $(FBA_DEFINES)
+CXXFLAGS += $(fpic) $(WARNINGS_DEFINES) $(FBA_DEFINES)
+LDFLAGS += $(fpic)
+
+ifeq ($(FRONTEND_SUPPORTS_RGB565), 1)
+CFLAGS += -DFRONTEND_SUPPORTS_RGB565
+CXXFLAGS += -DFRONTEND_SUPPORTS_RGB565
+endif
+
+ifeq ($(ZLIB_INTERNAL), 0)
+INCDIRS += -I$(FBA_LIB_DIR)
+endif
+
+ifeq ($(LIBRETRO_OPTIMIZATIONS), 1)
+GENERATE_OPTS := -D__LIBRETRO_OPTIMIZATIONS__
+else
+GENERATE_OPTS :=
+endif
+
+PERL = perl$(EXE_EXT)
+M68KMAKE_EXE = m68kmake$(EXE_EXT)
+CTVMAKE_EXE = ctvmake$(EXE_EXT)
+EXE_PREFIX = ./
+
+generate-files-clean:
+	rm -rf $(FBA_GENERATED_DIR)/
+	rm -rf $(FBA_CPU_DIR)/m68k/m68kopac.c
+	rm -rf $(FBA_CPU_DIR)/m68k/m68kopdm.c
+	rm -rf $(FBA_CPU_DIR)/m68k/m68kopnz.c
+	rm -rf $(FBA_CPU_DIR)/m68k/m68kops.c
+	rm -rf $(FBA_CPU_DIR)/m68k/m68kops.h
+
+generate-files:
+	@mkdir -p $(FBA_GENERATED_DIR) 2>/dev/null || /bin/true
+	@echo "Generating $(FBA_GENERATED_DIR)/driverlist.h..."
+	@echo ""
+	$(PERL) $(FBA_SCRIPTS_DIR)/gamelist.pl -o $(FBA_GENERATED_DIR)/driverlist.h -l gamelist.txt
+	@echo ""
+	$(CC_SYSTEM) $(GENERATE_OPTS) -o $(M68KMAKE_EXE) $(FBA_CPU_DIR)/m68k/m68kmake.c
+	$(EXE_PREFIX)$(M68KMAKE_EXE) $(FBA_CPU_DIR)/m68k/ $(FBA_CPU_DIR)/m68k/m68k_in.c
+
+$(TARGET): $(OBJS)
+ifeq ($(STATIC_LINKING), 1)
+	$(AR) rcs $@ $(OBJS)
+else
+	$(LD) $(LINKOUT)$@ $(SHARED) $(OBJS) $(LDFLAGS)
+endif
+
+%.o: %.cpp
+	$(CXX) -c $(OBJOUT)$@ $< $(CXXFLAGS) $(INCDIRS)
+
+%.o: %.c
+	$(CC) -c $(OBJOUT)$@ $< $(CFLAGS) $(INCDIRS)
+
+clean-objs:
+	rm -f $(OBJS)
+
+clean:
+	rm -f $(TARGET)
+	rm -f $(OBJS)
+	rm -f $(M68KMAKE_EXE)
+	rm -f $(CTVMAKE_EXE)
+
+print-%:
+	@echo '$*=$($*)'
+
+EX_DIR := ex
+EX_OBJ = $(EX_DIR)/ex2_5.o
+ex: $(EX_OBJ)
+	@$(CXX) $^ -o $@.out
+
+$(EX_DIR)/%.o : $(EX_DIR)/%.cpp
+	@$(CXX) -c $^ -o $@
+
+ex_clean:
+	rm -f $(EX_DIR)/*.o

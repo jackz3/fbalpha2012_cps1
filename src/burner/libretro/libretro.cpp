@@ -78,7 +78,7 @@ static bool input_rotated           = false;
 
 void retro_get_system_info(struct retro_system_info *info)
 {
-   info->library_name = "FB Alpha 2012 CPS-1";
+   info->library_name = "FB Alpha 2012 CPS-1 + i8080";
    info->library_version = "v0.2.97.28";
    info->need_fullpath = true;
    info->block_extract = true;

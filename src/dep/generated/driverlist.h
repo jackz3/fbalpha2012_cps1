@@ -2,6 +2,7 @@
 
 // Declaration of all drivers
 #define DRV extern struct BurnDriver
+DRV		BurnDrvI8080Invaders;
 DRV		BurnDrvCps1941u;
 DRV		BurnDrvCps1941;
 DRV		BurnDrvCps1941j;
@@ -253,6 +254,7 @@ DRV		BurnDrvCpsWonder3;
 // Structure containing addresses of all drivers
 // Needs to be kept sorted (using the full game name as the key) to prevent problems with the gamelist in Kaillera
 static struct BurnDriver* pDriver[] = {
+	&BurnDrvI8080Invaders,
 	&BurnDrvCps1941u,			// 1941 - Counter Attack (900227 USA)
 	&BurnDrvCps1941,			// 1941 - Counter Attack (900227 World)
 	&BurnDrvCps1941j,			// 1941 - Counter Attack (Japan)

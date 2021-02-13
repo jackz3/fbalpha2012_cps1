@@ -1263,6 +1263,23 @@ static INT32 CpsGetROMs(bool bLoad)
 }
 
 /* ---------------------------------------------------------------- */
+INT32 I8080Init() {
+	INT32 nMemLen, i;
+	
+	BurnSetRefreshRate(59.629403);
+
+	nCPS68KClockspeed = nCPS68KClockspeed * 100 / nBurnFPS;
+
+	nMemLen = nCpsZRomLen;
+	CpsGfx = (UINT8*)BurnMalloc(nMemLen);
+	if (CpsGfx == NULL) {
+		return 1;
+	}
+	memset(CpsGfx, 0, nMemLen);
+	CpsZRom  = CpsGfx + nCpsGfxLen;
+	CpsCode = CpsRom;
+	return 0;
+}
 
 INT32 CpsInit(void)
 {

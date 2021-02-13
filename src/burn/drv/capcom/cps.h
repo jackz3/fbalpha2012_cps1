@@ -30,6 +30,7 @@ extern UINT8 *CpsAd;   extern UINT32 nCpsAdLen;		// ADPCM Data
 extern UINT32 nCpsGfxScroll[4];								// Offset to Scroll tiles
 extern UINT32 nCpsGfxMask;									// Address mask
 extern UINT8* CpsStar;
+INT32 I8080Init();
 INT32 CpsInit();
 INT32 Cps2Init();
 INT32 CpsExit();
@@ -178,6 +179,8 @@ extern INT32 nIrqLine50, nIrqLine52;								// The scanlines at which the interr
 extern INT32 nCpsNumScanlines;
 extern INT32 Cps1VBlankIRQLine;
 extern INT32 CpsDrawSpritesInReverse;
+INT32 I8080RunInit();
+INT32 I8080Frame();
 INT32 CpsRunInit();
 INT32 CpsRunExit();
 INT32 Cps1Frame();
